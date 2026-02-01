@@ -4,38 +4,48 @@ on: [push, workflow_dispatch]
 
 jobs:
   build:
-    runs-on: macos-13  # Has Xcode/iOS SDKs
+    runs-on: macos-15  # Updated: macOS 15 Sonoma (ARM64 default; supports Xcode 16+ iOS SDKs)[attached_file:2]
     steps:
     - uses: actions/checkout@v4
 
     - name: Setup Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.23'  # Latest stable
+        go-version: '1.23.x'  # Stable for Go 1.23+
 
-    - name: Install Xcode command line tools
-      run: |
-        sudo xcode-select --install
-        sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+    - name: Select Xcode version
+      run: sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer  # Latest Xcode for iOS SDK[web:98]
 
-    - name: Build frp (Darwin armv7 hack)
+    - name: Build frp (Darwin armv7/iOS hack)
       env:
         CGO_ENABLED: 0
         GOOS: darwin
-        GOARCH: arm  # armv7 equiv; Go uses armv6+ subset
-        GOARM: 7     # Explicit armv7
-        CC: clang    # iOS-like
+        GOARCH: arm
+        GOARM: 7  # armv7 for iPad2,2
+        CC: clang
         CXX: clang++
-        CGO_LDFLAGS: "-arch armv7 -mios-version-min=9.0"  # iOS min version hack
+        CGO_LDFLAGS: >-
+          -arch armv7 
+          -mios-version-min=9.0 
+          -isysroot $(xcrun --sdk iphoneos --show-sdk-path)
       run: |
-        make -f Makefile.cross-compiles  # Or custom: go build -trimpath -ldflags="-s -w" -o frps_darwin_armv7 ./cmd/frps
-        go build -trimpath -ldflags="-s -w" -tags frps -o frps_ios_armv7 ./cmd/frps
-        go build -trimpath -ldflags="-s -w" -tags frpc -o frpc_ios_armv7 ./cmd/frpc
+        # Use frp's cross-compile Makefile if available
+        if [ -f Makefile.cross-compiles ]; then
+          make darwin_arm  # Or specific target
+        else
+          go build -trimpath -ldflags="-s -w" -tags frps -o frps_ios_armv7 ./cmd/frps
+          go build -trimpath -ldflags="-s -w" -tags frpc -o frpc_ios_armv7 ./cmd/frpc
+        fi[web:101][page:1]
+
+    - name: Verify binary (file check)
+      run: |
+        file frps_ios_armv7  # Should show "Mach-O arm executable"
+        lipo -info frps_ios_armv7  # Confirm armv7 arch
 
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
-        name: frp-ios-armv7
+        name: frp-ios-armv7-${{ github.sha }}
         path: |
           frps_ios_armv7
           frpc_ios_armv7

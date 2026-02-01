@@ -1,53 +1,42 @@
-name: Cross-compile frp for iOS armv7
+name: Build frp darwin/armv7 (iOS 32-bit)
 
 on: [push, workflow_dispatch]
 
 jobs:
   build:
-    runs-on: macos-15  # Fixed: Replaces macos-13[attached_file:1][attached_file:2]
+    runs-on: macos-15
     steps:
     - uses: actions/checkout@v4
 
-    - name: Setup Go
+    - name: Setup Go 1.14 (darwin/arm support)
       uses: actions/setup-go@v5
       with:
-        go-version: '1.23.x'
+        go-version: '1.14.15'  # Last stable with darwin/arm[web:136][web:141]
 
-    - name: Setup Xcode
-      run: sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
-
-    - name: Get iOS SDK path
-      id: sdk
-      run: echo "sdk_path=$(xcrun --sdk iphoneos --show-sdk-path)" >> $GITHUB_OUTPUT
-
-    - name: Build frp
+    - name: Build frp darwin armv7
       env:
         CGO_ENABLED: 0
         GOOS: darwin
         GOARCH: arm
-        GOARM: 7
-        CC: clang
-        CXX: clang++
-        CGO_LDFLAGS: >-
-          -arch armv7
-          -mios-version-min=9.0
-          -isysroot ${{ steps.sdk.outputs.sdk_path }}
+        GOARM: 7  # armv7 Cortex-A8 (iPad2)
       run: |
-        if [ -f Makefile.cross-compiles ]; then
-          make darwin_arm || true  # Ignore Makefile errors
-        fi
-        go build -trimpath -ldflags="-s -w" -tags frps -o frps_ios_armv7 ./cmd/frps
-        go build -trimpath -ldflags="-s -w" -tags frpc -o frpc_ios_armv7 ./cmd/frpc
+        go build -trimpath -ldflags="-s -w" -tags frps -o frps_darwin_armv7 ./cmd/frps
+        go build -trimpath -ldflags="-s -w" -tags frpc -o frpc_darwin_armv7 ./cmd/frpc
+
+    - name: Strip binaries
+      run: |
+        strip -S frps_darwin_armv7
+        strip -S frpc_darwin_armv7
 
     - name: Verify
       run: |
-        file frps_ios_armv7 || true
-        file frpc_ios_armv7 || true
+        file frps_darwin_armv7  # Mach-O arm v7 executable
+        lipo -info frps_darwin_armv7
 
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: frp-ios-armv7-${{ github.sha }}
+        name: frp-darwin-armv7-${{ github.sha }}
         path: |
-          frps_ios_armv7
-          frpc_ios_armv7
+          frps_darwin_armv7
+          frpc_darwin_armv7
